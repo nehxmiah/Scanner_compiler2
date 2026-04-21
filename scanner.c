@@ -163,7 +163,7 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    // STRING LITERAL
+    // STRING LITERAL - WITH SPACE HANDLING FIX
     else if (ch == '"') {
       int j = 0;
       buffer[j++] = '"';
@@ -196,7 +196,12 @@ int main(int argc, char *argv[]) {
           break;
         }
 
-        buffer[j++] = ch;
+        // FIX: Replace spaces with underscores for token file compatibility
+        if (ch == ' ') {
+          buffer[j++] = '_';
+        } else {
+          buffer[j++] = ch;
+        }
       }
 
       buffer[j] = '\0';
