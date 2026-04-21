@@ -1,0 +1,13 @@
+# Compiled files
+scanner
+myparser
+*.o
+
+# Generated files
+tokens.txt
+output.log
+
+# Editor files
+.vscode/
+*.swp
+*~
