@@ -53,21 +53,25 @@ void printTree(TreeNode *root, int indent) {
   if (!root)
     return;
 
+  // Skip epsilon nodes (symbol == -1 or lexeme == "ε")
+  if (root->symbol == -1 || strcmp(root->lexeme, "ε") == 0) {
+    return; // Don't print epsilon
+  }
+
   for (int i = 0; i < indent; i++)
     printf("│   ");
 
   if (root->is_terminal) {
     if (root->symbol == LEXICAL_ERROR) {
-      printf("├── ERROR: '%s' (LEXICAL_ERROR)\n", root->lexeme);
+      printf("├── ERROR: '%s'\n", root->lexeme);
     } else {
-      printf("├── Terminal: %s", getNodeSymbolName(root->symbol));
-      if (root->lexeme[0]) {
-        printf(" = \"%s\"", root->lexeme);
-      }
-      printf("\n");
+      // Show symbol with lexeme (e.g., PLUS = "+")
+      printf("├── %s = \"%s\"\n", getNodeSymbolName(root->symbol),
+             root->lexeme);
     }
   } else {
-    printf("├── NonTerminal: %s\n", getNodeSymbolName(root->symbol));
+    // Non-terminal - just show name
+    printf("├── %s\n", getNodeSymbolName(root->symbol));
   }
 
   for (int i = 0; i < root->num_children; i++) {

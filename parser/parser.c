@@ -109,6 +109,7 @@ void parse(FILE *fp) {
     // ---------------------------------------------------------
     else if (isTerminal(top)) {
       if (top == token.type) {
+        // CASE 2: Match -> Pop stack, advance input
         printf("[%03d] MATCH: Expected '%s', found '%s'.\n", step,
                getSymbolName(top), token.lexeme);
 
@@ -119,6 +120,7 @@ void parse(FILE *fp) {
         pop(&stack);
         token = getNextToken(fp);
       } else {
+        // CASE 3: Mismatch -> Error and Panic Mode Recovery
         printf("[%03d] SYNTAX ERROR: Terminal mismatch.\n", step);
         printf("      Expected: '%s' (%s)\n", getSymbolName(top),
                getSymbolName(top));
@@ -129,6 +131,7 @@ void parse(FILE *fp) {
         printf("      ACTION: Popping expected token from stack and "
                "continuing.\n");
         pop(&stack);
+        token = getNextToken(fp); // FIX: Advance token to prevent infinite loop
         error_flag = 1;
         syntax_error_count++;
       }
@@ -146,6 +149,7 @@ void parse(FILE *fp) {
         printf("[%03d] EXPAND: %s -> ", step, getSymbolName(top));
         if (p.rhs_len == 0) {
           printf("ε (epsilon)\n");
+          // Don't create epsilon nodes - just skip
         } else {
           for (int i = 0; i < p.rhs_len; i++) {
             printf("%s ", getSymbolName(p.rhs[i]));
@@ -155,18 +159,22 @@ void parse(FILE *fp) {
 
         pop(&stack);
 
-        TreeNode *children[10];
-        for (int i = 0; i < p.rhs_len; i++) {
-          int child_sym = p.rhs[i];
-          int is_term = isTerminal(child_sym);
-          children[i] = createNode(child_sym, is_term);
-          addChild(currentNode, children[i]);
-        }
+        // Only create children for non-epsilon productions
+        if (p.rhs_len > 0) {
+          TreeNode *children[10];
+          for (int i = 0; i < p.rhs_len; i++) {
+            int child_sym = p.rhs[i];
+            int is_term = isTerminal(child_sym);
+            children[i] = createNode(child_sym, is_term);
+            addChild(currentNode, children[i]);
+          }
 
-        for (int i = p.rhs_len - 1; i >= 0; i--) {
-          push(&stack, p.rhs[i], children[i]);
+          for (int i = p.rhs_len - 1; i >= 0; i--) {
+            push(&stack, p.rhs[i], children[i]);
+          }
         }
       } else {
+        // No table entry -> Error and Panic Mode Recovery
         printf("[%03d] SYNTAX ERROR: Unexpected token '%s' (%s).\n", step,
                token.lexeme, getSymbolName(token.type));
         printf("      While parsing: %s\n", getSymbolName(top));
