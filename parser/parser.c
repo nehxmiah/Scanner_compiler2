@@ -13,6 +13,11 @@ extern Production productions[36];
 void initParseTable();
 void initProductions();
 
+// ── CHANGE 1: Expose parse tree root for ICG ──────────────────────
+// main_icg.c accesses this after parsing is complete
+TreeNode *parse_root = NULL;
+// ──────────────────────────────────────────────────────────────────
+
 int isTerminal(int symbol) { return symbol < 100; }
 
 const char *getSymbolName(int symbol) {
@@ -50,6 +55,10 @@ void parse(FILE *fp) {
   initStack(&stack);
 
   TreeNode *root = createNode(PROGRAM, 0);
+
+  // ── CHANGE 2: Save root so ICG can access it ───────────────────
+  parse_root = root;
+  // ──────────────────────────────────────────────────────────────
 
   initProductions();
   initParseTable();
@@ -131,7 +140,7 @@ void parse(FILE *fp) {
         printf("      ACTION: Popping expected token from stack and "
                "continuing.\n");
         pop(&stack);
-        token = getNextToken(fp); // FIX: Advance token to prevent infinite loop
+        token = getNextToken(fp);
         error_flag = 1;
         syntax_error_count++;
       }
@@ -149,7 +158,6 @@ void parse(FILE *fp) {
         printf("[%03d] EXPAND: %s -> ", step, getSymbolName(top));
         if (p.rhs_len == 0) {
           printf("ε (epsilon)\n");
-          // Don't create epsilon nodes - just skip
         } else {
           for (int i = 0; i < p.rhs_len; i++) {
             printf("%s ", getSymbolName(p.rhs[i]));
@@ -159,7 +167,6 @@ void parse(FILE *fp) {
 
         pop(&stack);
 
-        // Only create children for non-epsilon productions
         if (p.rhs_len > 0) {
           TreeNode *children[10];
           for (int i = 0; i < p.rhs_len; i++) {
@@ -180,7 +187,6 @@ void parse(FILE *fp) {
         printf("      While parsing: %s\n", getSymbolName(top));
         printf("      Expected one of: ");
 
-        // Show what tokens were expected (lookahead set)
         int first = 1;
         for (int i = 0; i < 30; i++) {
           if (parse_table[top][i] != -1) {
@@ -197,7 +203,6 @@ void parse(FILE *fp) {
         syntax_error_count++;
         error_flag = 1;
 
-        // PANIC MODE with feedback
         printf("      Entering PANIC MODE: Skipping tokens to find "
                "synchronization point...\n");
 
@@ -249,5 +254,7 @@ void parse(FILE *fp) {
     printf("================================\n");
   }
 
-  freeTree(root);
+  // NOTE: We do NOT call freeTree(root) here anymore because
+  // main_icg.c needs the tree to remain in memory for ICG.
+  // freeTree is called in main_icg.c after ICG is complete.
 }
