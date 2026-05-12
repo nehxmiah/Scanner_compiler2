@@ -7,9 +7,15 @@
  *   - if statements  (conditional jumps)
  *   - while loops    (loop labels + back-jumps)
  *
- * Also performs structural error detection:
+ * Structural error detection:
  *   - Missing conditions
  *   - Infinite loop detection (while with constant true condition)
+ *
+ * MODIFICATIONS:
+ *   - Added sym_enter_scope() / sym_exit_scope() around
+ *     if and while bodies                              (Q4 — Scope tracking)
+ *   - Variables declared inside if/while bodies are now
+ *     removed from the symbol table when the block ends.
  */
 
 #include <stdio.h>
@@ -17,7 +23,7 @@
 #include <stdlib.h>
 #include "icg.h"
 
-/* Forward declaration — icg_stmt and icg_expr defined in other files */
+/* Forward declarations */
 extern void icg_stmt_list(TreeNode *node);
 extern void icg_expr(TreeNode *node, char *result_out);
 
@@ -42,11 +48,11 @@ static TreeNode *findChild(TreeNode *node, int symbol) {
 }
 
 /* ─────────────────────────────────────────────────────────────────
- * structural_check_condition(cond_node)
- * Checks the condition node for structural errors:
+ * structural_check_condition(cond_node, construct)
+ * Checks for:
  *   - Missing condition (null node)
- *   - Constant true condition e.g. while(1 > 0) — infinite loop risk
- * Returns 1 if condition is valid, 0 if error detected.
+ *   - Constant-only condition in while → infinite loop warning
+ * Returns 1 if valid, 0 if structural error.
  * ───────────────────────────────────────────────────────────────── */
 static int structural_check_condition(TreeNode *cond_node,
                                       const char *construct) {
@@ -57,14 +63,13 @@ static int structural_check_condition(TreeNode *cond_node,
         return 0;
     }
 
-    /* Check for constant-only condition (infinite loop risk) */
-    /* condition → exp relop exp
-       If both exp children resolve to NUMBER nodes only, warn. */
+    /* Check for constant-only condition (infinite loop risk).
+     * condition → exp relop exp
+     * If both sides are NUMBER-only factors, warn. */
     if (cond_node->num_children >= 3) {
         TreeNode *left_exp  = child(cond_node, 0);
         TreeNode *right_exp = child(cond_node, 2);
 
-        /* Simple check: if both sides are just a NUMBER factor */
         int left_is_const  = 0;
         int right_is_const = 0;
 
@@ -106,40 +111,48 @@ static int structural_check_condition(TreeNode *cond_node,
 /* ─────────────────────────────────────────────────────────────────
  * icg_if(node)
  *
- * Parse tree structure for if_stmt:
- *   IF_STMT
- *     IF  (  CONDITION  )  {  STMT_LIST  }
+ * Parse tree structure:
+ *   IF_STMT → IF ( CONDITION ) { STMT_LIST }
  *
  * Quadruples generated:
- *   (op,   left, right, t1)      ← evaluate condition
- *   (if_false, t1, -, L_end)     ← jump if condition false
+ *   (op,       left, right, t1)   ← evaluate condition
+ *   (if_false, t1,   -,     L1)   ← skip body if false
  *   ... body quadruples ...
- *   (label, -, -, L_end)         ← end label
+ *   (label,    -,    -,     L1)   ← end of if block
+ *
+ * MODIFICATION: sym_enter_scope() called before body,
+ * sym_exit_scope() called after body so variables declared
+ * inside the if block are cleaned up properly.
  * ───────────────────────────────────────────────────────────────── */
 void icg_if(TreeNode *node) {
     if (!node) return;
 
-    /* Find CONDITION and STMT_LIST child nodes */
     TreeNode *cond_node      = findChild(node, CONDITION);
     TreeNode *stmt_list_node = findChild(node, STMT_LIST);
 
     /* Structural check */
     if (!structural_check_condition(cond_node, "if")) return;
 
-    /* Evaluate the condition — result goes into a temp */
+    /* Evaluate the condition */
     char cond_temp[MAX_ARG];
     icg_expr(cond_node, cond_temp);
 
-    /* Generate end label */
+    /* Create end label */
     char L_end[MAX_ARG];
     newLabel(L_end);
 
-    /* if_false: if condition is false, jump to L_end */
+    /* Jump to end if condition is false */
     emit("if_false", cond_temp, "-", L_end);
 
-    /* Generate code for the body */
+    /* Enter new scope for the if body */
+    sym_enter_scope();
+
+    /* Generate body quadruples */
     if (stmt_list_node)
         icg_stmt_list(stmt_list_node);
+
+    /* Exit if body scope — removes variables declared inside */
+    sym_exit_scope();
 
     /* Place the end label */
     emit("label", "-", "-", L_end);
@@ -151,22 +164,24 @@ void icg_if(TreeNode *node) {
 /* ─────────────────────────────────────────────────────────────────
  * icg_while(node)
  *
- * Parse tree structure for while_stmt:
- *   WHILE_STMT
- *     WHILE  (  CONDITION  )  {  STMT_LIST  }
+ * Parse tree structure:
+ *   WHILE_STMT → WHILE ( CONDITION ) { STMT_LIST }
  *
  * Quadruples generated:
- *   (label, -, -, L_start)       ← top of loop
- *   (op,   left, right, t1)      ← evaluate condition
- *   (if_false, t1, -, L_end)     ← exit if condition false
+ *   (label,    -,    -,     L_start) ← top of loop
+ *   (op,       left, right, t1)      ← evaluate condition
+ *   (if_false, t1,   -,     L_end)   ← exit if false
  *   ... body quadruples ...
- *   (goto, -, -, L_start)        ← jump back to top
- *   (label, -, -, L_end)         ← exit label
+ *   (goto,     -,    -,     L_start) ← loop back
+ *   (label,    -,    -,     L_end)   ← exit label
+ *
+ * MODIFICATION: sym_enter_scope() called before body,
+ * sym_exit_scope() called after body so variables declared
+ * inside the while block are cleaned up properly.
  * ───────────────────────────────────────────────────────────────── */
 void icg_while(TreeNode *node) {
     if (!node) return;
 
-    /* Find CONDITION and STMT_LIST child nodes */
     TreeNode *cond_node      = findChild(node, CONDITION);
     TreeNode *stmt_list_node = findChild(node, STMT_LIST);
 
@@ -179,24 +194,30 @@ void icg_while(TreeNode *node) {
     newLabel(L_start);
     newLabel(L_end);
 
-    /* Place the loop start label */
+    /* Place loop start label */
     emit("label", "-", "-", L_start);
 
     /* Evaluate condition */
     char cond_temp[MAX_ARG];
     icg_expr(cond_node, cond_temp);
 
-    /* if_false: exit loop */
+    /* Exit loop if condition is false */
     emit("if_false", cond_temp, "-", L_end);
 
-    /* Generate body code */
+    /* Enter new scope for the while body */
+    sym_enter_scope();
+
+    /* Generate body quadruples */
     if (stmt_list_node)
         icg_stmt_list(stmt_list_node);
 
-    /* Jump back to start */
+    /* Exit while body scope — removes variables declared inside */
+    sym_exit_scope();
+
+    /* Jump back to loop start */
     emit("goto", "-", "-", L_start);
 
-    /* Place end label */
+    /* Place exit label */
     emit("label", "-", "-", L_end);
 
     printf("[ICG] while_stmt: condition=%s  start=%s  end=%s\n",

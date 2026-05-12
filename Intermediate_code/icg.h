@@ -5,12 +5,17 @@
  *
  * Defines all shared structs, constants, and function prototypes
  * used across the entire ICG pipeline.
+ *
+ * MODIFICATIONS:
+ *   - Added scope_level field to Symbol struct       (Q4 — Scope tracking)
+ *   - Added sym_enter_scope() / sym_exit_scope()     (Q4 — Scope tracking)
+ *   - Added extern current_scope                     (Q4 — Scope tracking)
  */
 
 #ifndef ICG_H
 #define ICG_H
 
-#include "parser/parser.h"  /* TreeNode, Terminal, NonTerminal */
+#include "parser/parser.h"
 #include "tree.h"
 
 /* ─── CONSTANTS ─────────────────────────────────────────────────── */
@@ -22,25 +27,20 @@
 #define MAX_TEMPS       100
 
 /* ─── QUADRUPLE STRUCT ──────────────────────────────────────────── */
-/*
- * A quadruple has the form:  (op, arg1, arg2, result)
- * Example:  (*,  y,  2,  t1)
- *           (+,  x,  t1, t2)
- *           (=,  t2, -,  z )
- */
 typedef struct {
-    char op[MAX_ARG];       /* operator e.g. "+", "*", "=", "if_false" */
-    char arg1[MAX_ARG];     /* first operand  */
-    char arg2[MAX_ARG];     /* second operand ("-" if unused) */
-    char result[MAX_ARG];   /* result variable or label */
+    char op[MAX_ARG];
+    char arg1[MAX_ARG];
+    char arg2[MAX_ARG];
+    char result[MAX_ARG];
 } Quadruple;
 
 /* ─── SYMBOL TABLE ENTRY ────────────────────────────────────────── */
 typedef struct {
-    char name[MAX_NAME];    /* variable name e.g. "x" */
-    char type[MAX_NAME];    /* type e.g. "int" */
-    int  initialised;       /* 1 if assigned a value, 0 otherwise */
-    int  line_declared;     /* line number where declared */
+    char name[MAX_NAME];
+    char type[MAX_NAME];
+    int  initialised;
+    int  line_declared;
+    int  scope_level;   /* NEW: 0=global, 1=inside if/while, 2=nested */
 } Symbol;
 
 /* ─── SYMBOL TABLE ──────────────────────────────────────────────── */
@@ -49,46 +49,43 @@ typedef struct {
     int    count;
 } SymbolTable;
 
-/* ─── GLOBAL QUADRUPLE TABLE ────────────────────────────────────── */
+/* ─── GLOBALS ───────────────────────────────────────────────────── */
 extern Quadruple quad_table[MAX_QUADS];
 extern int       quad_count;
-
-/* ─── GLOBAL SYMBOL TABLE ───────────────────────────────────────── */
 extern SymbolTable sym_table;
-
-/* ─── TEMP & LABEL COUNTERS ─────────────────────────────────────── */
 extern int temp_count;
 extern int label_count;
+extern int current_scope;   /* NEW: tracks current block depth */
 
-/* ═══════════════════════════════════════════════════════════════════
- *  FUNCTION PROTOTYPES
- * ═══════════════════════════════════════════════════════════════════ */
+/* ─── PROTOTYPES ────────────────────────────────────────────────── */
 
-/* --- icg.c (Melanie) --- */
+/* icg.c */
 void emit(const char *op, const char *arg1,
           const char *arg2, const char *result);
-void newTemp(char *buf);          /* fills buf with "t1", "t2", ... */
-void newLabel(char *buf);         /* fills buf with "L1", "L2", ... */
+void newTemp(char *buf);
+void newLabel(char *buf);
 void printQuadruples(void);
-void icg_printf(TreeNode *node);  /* printf IC generation */
-void icg_error(const char *msg);  /* centralised error reporter */
+void icg_printf(TreeNode *node);
+void icg_error(const char *msg);
 
-/* --- symbol_table.c (Nehemiah) --- */
+/* symbol_table.c */
 void sym_init(void);
 int  sym_insert(const char *name, const char *type, int line);
 int  sym_lookup(const char *name);
 void sym_update(const char *name);
 void sym_print(void);
+void sym_enter_scope(void);   /* NEW */
+void sym_exit_scope(void);    /* NEW */
 
-/* --- icg_expr.c (Ivy) --- */
+/* icg_expr.c */
 void icg_expr(TreeNode *node, char *result_out);
 void icg_assign(TreeNode *node);
 
-/* --- icg_control.c (Stella) --- */
+/* icg_control.c */
 void icg_if(TreeNode *node);
 void icg_while(TreeNode *node);
 
-/* --- main_icg.c (Melanie) --- */
+/* main_icg.c */
 void icg_stmt(TreeNode *node);
 void icg_stmt_list(TreeNode *node);
 void icg_decl(TreeNode *node);

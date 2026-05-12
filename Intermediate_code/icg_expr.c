@@ -8,9 +8,13 @@
  *   - Relational expressions  (>, <, ==, !=, >=, <=)
  *   - Assignment statements   (id = exp)
  *
- * Also performs runtime error checks:
+ * Runtime error checks:
  *   - Division by zero detection
  *   - Use of uninitialised variables
+ *
+ * MODIFICATIONS:
+ *   - Added type mismatch check in icg_assign()      (Q4 — Type checking)
+ *   - Hardened icg_factor() for ( exp ) case         (Q6 — Parentheses)
  */
 
 #include <stdio.h>
@@ -89,6 +93,9 @@ static const char *get_operator_string(int symbol) {
  * icg_factor(node, result_out)
  * Handles the base case — a single id, number, or (exp).
  * Fills result_out with the name/value of the factor.
+ *
+ * MODIFICATION: ( exp ) case now uses LPAREN detection to find
+ * the inner EXP node reliably even in nested expressions.
  * ───────────────────────────────────────────────────────────────── */
 static void icg_factor(TreeNode *node, char *result_out) {
     if (!node) { strcpy(result_out, "-"); return; }
@@ -96,9 +103,9 @@ static void icg_factor(TreeNode *node, char *result_out) {
     /* factor → id */
     TreeNode *id_node = findChild(node, ID);
     if (id_node) {
-        /* Check variable is declared and initialised */
-        sym_lookup(id_node->lexeme);
-        runtime_check_uninitialised(id_node->lexeme);
+        int idx = sym_lookup(id_node->lexeme);
+        if (idx >= 0)
+            runtime_check_uninitialised(id_node->lexeme);
         strcpy(result_out, id_node->lexeme);
         return;
     }
@@ -110,7 +117,27 @@ static void icg_factor(TreeNode *node, char *result_out) {
         return;
     }
 
-    /* factor → ( exp ) */
+    /* factor → ( exp )
+     * Look for LPAREN to confirm this is a parenthesised expression.
+     * Then find the EXP child and recurse into it.
+     * This handles nested cases like (x + 1) * (y - 2) correctly. */
+    TreeNode *lparen_node = findChild(node, LPAREN);
+    if (lparen_node) {
+        /* The EXP is the second child of FACTOR: FACTOR → LPAREN EXP RPAREN */
+        TreeNode *inner_exp = NULL;
+        for (int i = 0; i < node->num_children; i++) {
+            if (node->children[i]->symbol == EXP) {
+                inner_exp = node->children[i];
+                break;
+            }
+        }
+        if (inner_exp) {
+            icg_expr(inner_exp, result_out);
+            return;
+        }
+    }
+
+    /* Fallback: try the old EXP lookup for safety */
     TreeNode *exp_node = findChild(node, EXP);
     if (exp_node) {
         icg_expr(exp_node, result_out);
@@ -123,16 +150,13 @@ static void icg_factor(TreeNode *node, char *result_out) {
 /* ─────────────────────────────────────────────────────────────────
  * icg_term_p(node, left, result_out)
  * Handles term' → * factor term' | / factor term' | ε
- * left is the result of the factor to the left of this term'.
  * ───────────────────────────────────────────────────────────────── */
 static void icg_term_p(TreeNode *node, const char *left, char *result_out) {
     if (!node || node->num_children == 0) {
-        /* term' → ε: result is just left unchanged */
         strcpy(result_out, left);
         return;
     }
 
-    /* First child is the operator (* or /) */
     TreeNode *op_node     = child(node, 0);
     TreeNode *factor_node = child(node, 1);
     TreeNode *term_p_node = child(node, 2);
@@ -148,13 +172,11 @@ static void icg_term_p(TreeNode *node, const char *left, char *result_out) {
         }
     }
 
-    /* Emit the quadruple */
     char temp[MAX_ARG];
     newTemp(temp);
     const char *op_str = op_node ? get_operator_string(op_node->symbol) : "?";
     emit(op_str, left, right, temp);
 
-    /* Recurse into term' */
     icg_term_p(term_p_node, temp, result_out);
 }
 
@@ -203,10 +225,8 @@ static void icg_exp_p(TreeNode *node, const char *left, char *result_out) {
  * icg_expr(node, result_out)
  * Main expression handler.
  * Handles:
- *   - exp → term exp'        (arithmetic)
+ *   - exp → term exp'            (arithmetic)
  *   - condition → exp relop exp  (relational)
- *
- * Fills result_out with the temp variable holding the result.
  * ───────────────────────────────────────────────────────────────── */
 void icg_expr(TreeNode *node, char *result_out) {
     if (!node) { strcpy(result_out, "-"); return; }
@@ -221,11 +241,9 @@ void icg_expr(TreeNode *node, char *result_out) {
         icg_expr(left_exp,  left);
         icg_expr(right_exp, right);
 
-        /* Find the actual relop terminal inside RELOP node */
         const char *op_str = "?";
-        if (relop && relop->num_children > 0) {
+        if (relop && relop->num_children > 0)
             op_str = get_operator_string(child(relop, 0)->symbol);
-        }
 
         char temp[MAX_ARG];
         newTemp(temp);
@@ -253,7 +271,12 @@ void icg_expr(TreeNode *node, char *result_out) {
  * icg_assign(node)
  * Handles assign_stmt → id = exp ;
  *
- * Quadruples generated:
+ * MODIFICATION: Added type mismatch check (Q4).
+ * If the RHS expression resolves to a string literal (starts with '"')
+ * or another non-integer token, a SEMANTIC ERROR is reported and
+ * the broken quadruple is NOT emitted.
+ *
+ * Quadruples generated (normal case):
  *   ... expression quadruples ...
  *   (=, result, -, id)
  * ───────────────────────────────────────────────────────────────── */
@@ -274,6 +297,27 @@ void icg_assign(TreeNode *node) {
     /* Generate expression quadruples */
     char exp_result[MAX_ARG];
     icg_expr(exp_node, exp_result);
+
+    /* ── TYPE MISMATCH CHECK (Q4) ──────────────────────────────────
+     * The only type in MiniC is int. Any expression result that
+     * looks like a string literal is incompatible.
+     * A string literal starts with a double-quote character.       */
+    if (exp_result[0] == '"') {
+        fprintf(stderr,
+            "[SEMANTIC ERROR] Type mismatch: cannot assign string "
+            "literal to int variable '%s'. Assignment ignored.\n",
+            id_node->lexeme);
+        return;  /* do NOT emit the broken quadruple */
+    }
+
+    /* Also catch if result is a dash (broken from upstream error) */
+    if (strcmp(exp_result, "-") == 0) {
+        fprintf(stderr,
+            "[SEMANTIC ERROR] Type mismatch: invalid expression "
+            "result for variable '%s'. Assignment ignored.\n",
+            id_node->lexeme);
+        return;
+    }
 
     /* Generate assignment quadruple */
     emit("=", exp_result, "-", id_node->lexeme);
