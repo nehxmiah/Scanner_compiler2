@@ -10,6 +10,8 @@
  *   - Added scope_level field to Symbol struct       (Q4 — Scope tracking)
  *   - Added sym_enter_scope() / sym_exit_scope()     (Q4 — Scope tracking)
  *   - Added extern current_scope                     (Q4 — Scope tracking)
+ *   - Added semantic_error_count global              (Q4 — Semantic error tracking)
+ *   - Added two-pass function prototypes             (Q4 — Error detection before generation)
  */
 
 #ifndef ICG_H
@@ -40,7 +42,7 @@ typedef struct {
     char type[MAX_NAME];
     int  initialised;
     int  line_declared;
-    int  scope_level;   /* NEW: 0=global, 1=inside if/while, 2=nested */
+    int  scope_level;   /* 0=global, 1=inside if/while, 2=nested */
 } Symbol;
 
 /* ─── SYMBOL TABLE ──────────────────────────────────────────────── */
@@ -55,40 +57,44 @@ extern int       quad_count;
 extern SymbolTable sym_table;
 extern int temp_count;
 extern int label_count;
-extern int current_scope;   /* NEW: tracks current block depth */
+extern int current_scope;           /* tracks current block depth */
+extern int semantic_error_count;    /* counts semantic errors */
 
 /* ─── PROTOTYPES ────────────────────────────────────────────────── */
 
-/* icg.c */
-void emit(const char *op, const char *arg1,
-          const char *arg2, const char *result);
+/* icg.c - Core ICG functions */
+void emit(const char *op, const char *arg1, const char *arg2, const char *result);
 void newTemp(char *buf);
 void newLabel(char *buf);
 void printQuadruples(void);
 void icg_printf(TreeNode *node);
 void icg_error(const char *msg);
 
-/* symbol_table.c */
+/* symbol_table.c - Symbol table management */
 void sym_init(void);
 int  sym_insert(const char *name, const char *type, int line);
 int  sym_lookup(const char *name);
 void sym_update(const char *name);
 void sym_print(void);
-void sym_enter_scope(void);   /* NEW */
-void sym_exit_scope(void);    /* NEW */
+void sym_enter_scope(void);
+void sym_exit_scope(void);
 
-/* icg_expr.c */
+/* icg_expr.c - Expression and assignment handling */
 void icg_expr(TreeNode *node, char *result_out);
-void icg_assign(TreeNode *node);
+void icg_assign_check(TreeNode *node);      /* PASS 1: Error checking only */
+void icg_assign_generate(TreeNode *node);   /* PASS 2: Code generation */
 
-/* icg_control.c */
+/* icg_control.c - Control flow handling */
 void icg_if(TreeNode *node);
 void icg_while(TreeNode *node);
+void icg_condition(TreeNode *node, char *true_label, char *false_label);
 
-/* main_icg.c */
-void icg_stmt(TreeNode *node);
-void icg_stmt_list(TreeNode *node);
+/* main_icg.c - Main driver and statement handling */
 void icg_decl(TreeNode *node);
+void icg_stmt_check(TreeNode *node);        /* PASS 1: Error checking */
+void icg_stmt_generate(TreeNode *node);     /* PASS 2: Code generation */
+void icg_stmt_list_check(TreeNode *node);   /* PASS 1: Error checking */
+void icg_stmt_list_generate(TreeNode *node);/* PASS 2: Code generation */
 void run_icg(TreeNode *root);
 
 #endif /* ICG_H */

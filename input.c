@@ -1,15 +1,24 @@
-int main() { 
-   int x, y, z; 
+int main() {
+    int a, b, c;
+    int result;
+    
+    a = 10;
+    b = hello;
+    c = 20;
+    
  
-   x = 10; 
-   y = 5;
-   z = x + y* 2; 
- 
-   if (z > 20) { 
-       printf("z is greater than 20:%d", z); 
-   } 
- 
-   while (x > 0) { 
-       x = x - 1; 
-   } 
-} 
+    
+    result = e * f;
+    
+    if (g > 10) {
+        result = 100;
+    }
+    
+    result = a + world;
+    
+    int a;
+    
+    result = a + c;
+    
+    
+}
