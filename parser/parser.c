@@ -16,6 +16,10 @@ void initProductions();
 // ── CHANGE 1: Expose parse tree root for ICG ──────────────────────
 // main_icg.c accesses this after parsing is complete
 TreeNode *parse_root = NULL;
+
+// ── CHANGE 2: Expose error count for ICG ──────────────────────────
+// main_icg.c checks this to skip code generation on parse errors
+int syntax_error_count = 0;
 // ──────────────────────────────────────────────────────────────────
 
 int isTerminal(int symbol) { return symbol < 100; }
@@ -70,7 +74,7 @@ void parse(FILE *fp) {
   int step = 0;
   int error_flag = 0;
   int lexical_error_count = 0;
-  int syntax_error_count = 0;
+  syntax_error_count = 0;  /* Reset global error counter */
 
   printf("--- Beginning LL(1) Parse with Error Reporting ---\n");
 

@@ -15,8 +15,8 @@
 #ifndef ICG_H
 #define ICG_H
 
-#include "parser/parser.h"
-#include "tree.h"
+#include "../parser/parser.h"
+#include "../parser/tree.h"
 
 /* ─── CONSTANTS ─────────────────────────────────────────────────── */
 #define MAX_QUADS       500

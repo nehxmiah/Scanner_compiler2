@@ -71,4 +71,7 @@ void initProductions();
 void initParseTable();
 void parse(FILE *fp);
 
+// -------------------- ERROR TRACKING --------------------
+extern int syntax_error_count;
+
 #endif

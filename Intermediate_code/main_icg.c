@@ -201,6 +201,16 @@ int main(int argc, char *argv[]) {
     printf("\n[3/3] Running Intermediate Code Generator...\n");
 
     extern TreeNode *parse_root;
+    extern int syntax_error_count;
+
+    /* Check if parsing succeeded */
+    if (syntax_error_count > 0) {
+        fprintf(stderr, "\n⚠️  SKIPPING CODE GENERATION\n");
+        fprintf(stderr, "  Reason: %d syntax error(s) found during parsing\n", syntax_error_count);
+        fprintf(stderr, "  Fix all syntax errors before generating intermediate code.\n\n");
+        return 1;
+    }
+
     if (!parse_root) {
         fprintf(stderr, "  Parse tree not available. Check parser output.\n");
         return 1;
