@@ -24,18 +24,18 @@ static TreeNode *findChild(TreeNode *node, int symbol) {
     return NULL;
 }
 
-static int runtime_check_div_zero(const char *arg2) {
+static int semantic_check_div_zero(const char *arg2) {
     if (strcmp(arg2, "0") == 0) {
-        fprintf(stderr, "[RUNTIME WARNING] Division by zero detected.\n");
+        fprintf(stderr, "[SEMANTIC WARNING] Compile-time division by zero detected.\n");
         return 1;
     }
     return 0;
 }
 
-static void runtime_check_uninitialised(const char *name) {
+static void semantic_check_uninitialised(const char *name) {
     int idx = sym_lookup(name);
     if (idx >= 0 && !sym_table.entries[idx].initialised) {
-        fprintf(stderr, "[RUNTIME WARNING] Variable '%s' used before assignment.\n", name);
+        fprintf(stderr, "[SEMANTIC WARNING] Variable '%s' may be used before assignment.\n", name);
     }
 }
 
@@ -62,7 +62,7 @@ static void icg_factor(TreeNode *node, char *result_out) {
     if (id_node) {
         int idx = sym_lookup(id_node->lexeme);
         if (idx >= 0)
-            runtime_check_uninitialised(id_node->lexeme);
+            semantic_check_uninitialised(id_node->lexeme);
         strcpy(result_out, id_node->lexeme);
         return;
     }
@@ -111,7 +111,7 @@ static void icg_term_p(TreeNode *node, const char *left, char *result_out) {
     icg_factor(factor_node, right);
 
     if (op_node && op_node->symbol == DIV) {
-        if (runtime_check_div_zero(right)) {
+        if (semantic_check_div_zero(right)) {
             strcpy(result_out, "-");
             return;
         }
@@ -221,6 +221,9 @@ void icg_assign_check(TreeNode *node) {
         semantic_error_count++;
         return;
     }
+
+    /* Mark the target variable as initialized for later semantic checks. */
+    sym_update(id_node->lexeme);
 }
 
 /* ─────────────────────────────────────────────────────────────────
